@@ -1,0 +1,13 @@
+package com.supplementsAlarm.backend;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication(exclude = {DataSourceAutoConfiguration.class})
+public class SupplementsAlarmBackendApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(SupplementsAlarmBackendApplication.class, args);
+	}
+
+}
