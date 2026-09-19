@@ -83,7 +83,6 @@ const styles = StyleSheet.create({
     width: 75,
     height: 55,
     borderRadius: 12,
-    //backgroundColor: focused ? 'rgb(240,240,240)' : 'transparent',
     justifyContent : 'center',
     alignItems: 'center',
     marginTop: 40
