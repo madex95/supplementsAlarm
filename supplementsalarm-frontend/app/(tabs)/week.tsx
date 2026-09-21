@@ -4,7 +4,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 //import * as weekTopUtill from '../../utillTs/weekTopUtill';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -19,6 +19,7 @@ export default function weekScreen() {
   const [localTablePillDetail, setLocalTablePillDetail] = useState<DB.PILL_DETAIL[]>([]);
   const [localTablePillTakeLog, setLocalTablePillTakeLog] = useState<DB.PILL_TAKE_LOG[]>([]);
 
+  // 화면에 그려질 카드 리스트 state
   const [pillCardList, setPillCardList] = useState<any[]>([]);
 
 
@@ -38,83 +39,75 @@ export default function weekScreen() {
           const mstData : DB.PILL[] = storedPill ? JSON.parse(storedPill) : [];
           const dtlData : DB.PILL_DETAIL[] = storedPillDetail ? JSON.parse(storedPillDetail) : [];
           const logData : DB.PILL_TAKE_LOG[] = storedPillTakeLog ? JSON.parse(storedPillTakeLog) : [];
-
           
-          setLocalTablePill(mstData);
-          setLocalTablePillDetail(dtlData);
-          setLocalTablePillTakeLog(logData);
+          const validMstData = mstData.filter((item) => item.DEL_YN === 'N');
+          const validDtlData = dtlData.filter((item) => item.DEL_YN === 'N');
+          const validLoglData = logData.filter((item) => item.DEL_YN === 'N');
+
+          setLocalTablePill(validMstData);
+          setLocalTablePillDetail(validDtlData);
+          setLocalTablePillTakeLog(validLoglData);
 
           const selectedDateYMD = c.getYMD(selectedDate);
 
-          const datePoint = c.getDatePoint(selectedDateYMD);
+          // 선택한 날짜의 로그 데이터 세팅
+          const selectedLogs = validLoglData.filter((lItem) => c.getYMD(lItem.P_TK_DT) === selectedDateYMD && lItem.USE_YN === 'Y');
 
-          const validMstData = mstData.filter((item) => item.DEL_YN === 'N');
+          // 화면에 그릴 카드 객체 생성
+          let cardData: any[] = [];
 
-          // 선택한 날짜가 오늘 또는 미래
-          if (datePoint === 'T' || datePoint === 'F'){
-            console.log("오늘 또는 미래");
-            const validDtlData = dtlData.filter((item) => item.DEL_YN === 'N' && item.USE_YN === 'Y');
+          // 해당 날짜에 복용 로그가 존재하는 경우 true
+          if (selectedLogs.length > 0) {
 
-            const cardData = validDtlData.map((dItem) => {
+            // 카드 객체 가공
+            cardData = selectedLogs.map((logObj) => {
+
+              // 마스터 데이터 세팅 (약 이름 갖고 와야됨)
+              const mstObj = validMstData.find((mItem) => mItem.P_UUID === logObj.P_UUID);
+
+              // 데이터 세팅
+              return {
+                P_UUID: logObj.P_UUID,
+                P_TK_TN: logObj.P_TK_TN,
+                P_TK_TM: logObj.P_TK_TM,
+                P_NM: mstObj?.P_NM,
+                P_TK_CHK_YN: logObj.P_TK_CHK_YN || 'N',
+              };
+            });
+          } 
+          // 해당 날짜에 복용 로그가 없는 경우 (오늘/미래 또는 로그가 없는 과거)
+          else {
+            // 디테일 데이터 세팅
+            const useDtlData = validDtlData.filter((item) => item.USE_YN === 'Y');
+
+            // 카드 객체 가공
+            cardData = useDtlData.filter((dItem) => {
+              // 마스터 데이터 세팅 (약 등록일 갖고와야됨)
               const mstObj = validMstData.find((mItem) => mItem.P_UUID === dItem.P_UUID);
 
+              // REG_DT 값 YYYYMMDD로 변경
+              const regDateYMD = c.getYMD(mstObj?.REG_DT);
+
+              // true면 map() 진행
+              return selectedDateYMD >= regDateYMD;
+            }).map((dItem) => {
+              // 마스터 데이터 세팅 (약 이름 갖고 와야됨)
+              const mstObj = validMstData.find((mItem) => mItem.P_UUID === dItem.P_UUID);
+
+              // 데이터 세팅
               return {
                 ...dItem,
-                P_NM : mstObj?.P_NM
-              }
-            }).sort((a,b) => a.P_TK_TM.localeCompare(b.P_TK_TM));
-
-            setPillCardList(cardData);          
-
-          } 
-          // 선택한 날짜가 과거
-          else {
-            console.log("과거");
-            const validDtlData = dtlData.filter((item) => item.DEL_YN === 'N');
-            
-            const cardData = validDtlData.filter((dItem) => {
-              const mstObj = validMstData.find((mItem) => mItem.P_UUID === dItem.P_UUID);
-
-              const regDate = c.getYMD(mstObj?.REG_DT);
-
-              return selectedDateYMD >= regDate;
-            }).map((map) => {
-              const mstObj = validMstData.find((mItem) => mItem.P_UUID === map.P_UUID);
-
-              const selectedDateLogData = logData.some(
-                (item) => item.P_UUID === map.P_UUID &&
-                          item.P_TK_DT === selectedDateYMD &&
-                          item.USE_YN === 'Y' &&
-                          item.DEL_YN === 'N'
-              )
-              
-              const logObj = logData.find((lItem) => {
-                console.log('로그 P_TK_TN : ' , lItem.P_TK_TN);
-                console.log('디테일 P_TK_TN : ' , map.P_TK_TN);
-                console.log('결과 : ' , lItem.P_TK_TN === map.P_TK_TN);
-                return(
-                lItem.P_UUID === map.P_UUID &&
-                lItem.P_TK_TN === map.P_TK_TN &&
-                lItem.P_TK_DT === selectedDateYMD &&
-                lItem.USE_YN === 'Y' &&
-                lItem.DEL_YN === 'N')}
-              );
-
-              console.log('logObj 입니다 ' , logObj);
-
-              // 🟢 수정 후
-              if (!logObj && selectedDateLogData) return null; 
-
-              return {
-                ...map,
-                P_NM : mstObj?.P_NM,
-                P_TK_CHK_YN : logObj ? logObj.P_TK_CHK_YN : 'N',
-              }
-            }).filter((d) => d!==null).sort((a,b) => a.P_TK_TM.localeCompare(b.P_TK_TM));
-                        
-            console.log('cardData 입니다 ' , cardData);
-            setPillCardList(cardData);          
+                P_NM: mstObj?.P_NM,
+                P_TK_CHK_YN: 'N',
+              };
+            });
           }
+
+          // 시간순 정렬
+          cardData.sort((a, b) => (a.P_TK_TM || '').localeCompare(b.P_TK_TM || ''));
+
+          // 카드 리스트 state 반영
+          setPillCardList(cardData);
                 
         } catch (e) {
           console.error('데이터 불러오기 실패:', e);
@@ -142,30 +135,69 @@ export default function weekScreen() {
 
   // 날짜 계산
   const getWeekDates = () => {
-    const currentDay = today.getDay(); // 0(일) ~ 6(토)
-    const days = ['일', '월', '화', '수', '목', '금', '토'];
 
-    // 이번 주 일요일 구하기
-    const sunday = new Date(today);
-    sunday.setDate(today.getDate() - currentDay);
+    const todayObj = new Date(today);
+    const currentDay = todayObj.getDay();
+
+    // 원하는 형식으로 날짜 세팅 
+    const days = ['금', '토', '일', '월', '화', '수', '목'];
+
+    // 요일 숫자값으로 매핑
+    const dayMap: { [key: string]: number } = {
+      '일': 0, '월': 1, '화': 2, '수': 3, '목': 4, '금': 5, '토': 6
+    };
+
+    // days의 첫 번째 요일 숫자값 세팅
+    const startDayNum = dayMap[days[0]];
+
+    // 오늘 기준으로 '시작 요일'까지 거슬러 올라갈 일수 계산
+    const diff = (currentDay - startDayNum + 7) % 7;
+
+    // 주 시작일 설정 (오늘 날짜에서 diff만큼 빼기)
+    const startDate = new Date(todayObj);
+    startDate.setDate(todayObj.getDate() - diff);
 
     return days.map((day, index) => {
-      const targetDate = new Date(sunday);
-      targetDate.setDate(sunday.getDate() + index);
+      const targetDate = new Date(startDate);
+      targetDate.setDate(startDate.getDate() + index);
 
-      const fullDate = targetDate.toISOString().split('T')[0]; // YYYY-MM-DD
+      // YYYY-MM-DD 포맷
+      const yyyy = targetDate.getFullYear();
+      const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
+      const dd = String(targetDate.getDate()).padStart(2, '0');
+      const fullDate = `${yyyy}-${mm}-${dd}`;
 
       return {
-        day,                                   // 요일
+        day,                                   // 요일 
         date: targetDate.getDate().toString(), // 일자 
-        fullDate,                              // 고유 날짜값
+        fullDate,                              // YYYY-MM-DD
       };
     });
   };
 
-  // 복용 체크 버튼 누를시 실행 함수
+  // ↑↑↑↑↑ 상단 날짜 부분 ↑↑↑↑↑ 상단 날짜 부분 ↑↑↑↑↑ 상단 날짜 부분 ↑↑↑↑↑
+  // ↑↑↑↑↑ 상단 날짜 부분 ↑↑↑↑↑ 상단 날짜 부분 ↑↑↑↑↑ 상단 날짜 부분 ↑↑↑↑↑
+
+
+
+  // ↓↓↓↓↓ 하단 카드 부분 ↓↓↓↓↓ 하단 카드 부분 ↓↓↓↓↓ 하단 카드 부분 ↓↓↓↓↓
+  // ↓↓↓↓↓ 하단 카드 부분 ↓↓↓↓↓ 하단 카드 부분 ↓↓↓↓↓ 하단 카드 부분 ↓↓↓↓↓
+
+  // 알림 모달 visible state
+  const [alertModalVisible, setAlertModalVisible] = useState(false);
+
+  // 복용 체크 버튼 클릭 시 실행 함수
   const takeChkBtnClick = async (uuid: string, takeTurn: number) => {
     // take check botton click
+
+    // 선택한 날짜 YYYYMMDD로 변환
+    const selectedDateYMD = c.getYMD(selectedDate);
+
+    // 선택한 날짜가 오늘보다 미래인 경우 알림 모달창 띄우기
+    if (selectedDateYMD > c.getYMD(c.getDate())) {
+      setAlertModalVisible(true);
+      return;
+    }
 
     // 선택한 회차의 약 데이터
     const selectCardData = pillCardList.find(
@@ -175,7 +207,7 @@ export default function weekScreen() {
     // 바뀐 체크박스 값
     const status = selectCardData.P_TK_CHK_YN === 'Y' ? 'N' : 'Y';
 
-    // 1. UI 개별 체크 상태 반전 & 변경된 값('Y' 또는 'N') 저장
+    // 체크값 바뀐 카드 반영해서 카드 리스트 세팅 
     setPillCardList((prev) =>
       prev.map((item) => {
         if (item.P_UUID === uuid && item.P_TK_TN === takeTurn) {
@@ -185,7 +217,7 @@ export default function weekScreen() {
       })
     );
 
-    // 선택한 약의 모든 회차 데이터
+    // 카드 리스트 중 선택한 UUID의 데이터
     const cardData = pillCardList.filter((item) => item.P_UUID === uuid);
 
     // 테이블 정보 복사 (state를 직접 수정하지 않기 위해 생성)
@@ -200,7 +232,7 @@ export default function weekScreen() {
         return(
           item.P_UUID === data.P_UUID &&                
           item.P_TK_TN === data.P_TK_TN &&              
-          item.P_TK_DT === c.getYMD(selectedDate) && // 
+          c.getYMD(item.P_TK_DT) === selectedDateYMD && 
           item.DEL_YN === 'N'                           
         )
         
@@ -209,22 +241,24 @@ export default function weekScreen() {
       // 순회 중 선택한 회차 일 시 true 아니면 false 세팅
       const takeTurnChk = data.P_TK_TN === takeTurn;
 
-      // findIndex()로 인해 로그테이블에 데이터가 있으면 해당 인덱스
+      // findIndex()로 인해 로그테이블에 데이터가 있으면
       if (cnt > -1){
         // 선택한 회차 일 시 true
         if (takeTurnChk){
-          coppyLogData[cnt].P_TK_CHK_YN = status;
-          coppyLogData[cnt].MOD_DT = c.getDate();
+          coppyLogData[cnt] = {
+            ...coppyLogData[cnt],
+            P_TK_CHK_YN: status,
+            MOD_DT: c.getDate(),
+          };
         }
-
-      // findIndex()로 인해 로그테이블에 데이터가 없으면 -1
+      // findIndex()로 인해 로그테이블에 데이터가 없으면 (-1)
       } else {
 
         // 새로운 데이터 등록
         coppyLogData.push({
           P_UUID: data.P_UUID,
           P_TK_TN: data.P_TK_TN,
-          P_TK_DT: c.getYMD(selectedDate),
+          P_TK_DT: selectedDate,
           P_TK_TM: data.P_TK_TM,
           P_TK_CHK_YN: takeTurnChk ? status : 'N',
           USE_YN: 'Y',
@@ -236,7 +270,7 @@ export default function weekScreen() {
       }
     })
 
-    // 화면에 반영
+    // 로그 테이블 state 반영
     setLocalTablePillTakeLog(coppyLogData);
 
     // 로컬에 테이블 반영
@@ -244,11 +278,12 @@ export default function weekScreen() {
     
   }
 
-  // ↑↑↑↑↑ 상단 날짜 부분 ↑↑↑↑↑ 상단 날짜 부분 ↑↑↑↑↑ 상단 날짜 부분 ↑↑↑↑↑
-  // ↑↑↑↑↑ 상단 날짜 부분 ↑↑↑↑↑ 상단 날짜 부분 ↑↑↑↑↑ 상단 날짜 부분 ↑↑↑↑↑
+  // ↑↑↑↑↑ 하단 카드 부분 ↑↑↑↑↑ 하단 카드 부분 ↑↑↑↑↑ 하단 카드 부분 ↑↑↑↑↑
+  // ↑↑↑↑↑ 하단 카드 부분 ↑↑↑↑↑ 하단 카드 부분 ↑↑↑↑↑ 하단 카드 부분 ↑↑↑↑↑
 
 
 /*
+// 바텀시트
  function useModalAnimation(initialHeight = 350) {
   const [modalVisible, setModalVisible] = useState(false);
   const translateY = useRef(new Animated.Value(initialHeight)).current;
@@ -282,19 +317,6 @@ export default function weekScreen() {
   };
 }
 */
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -421,6 +443,42 @@ const googleClick = async() => {
           })
         )}
       </ScrollView>
+
+
+      {/*****************************************************************/} 
+      {/*****************************************************************/}    
+      {/***** 모달 영역 시작 *********************************************/}
+      {/*****************************************************************/}    
+      {/*****************************************************************/}
+
+      {/* 알림 모달 영역 */}
+      <Modal
+        transparent={true}
+        visible={alertModalVisible}
+        animationType="fade"
+        onRequestClose={() => setAlertModalVisible(false)}>
+        <View style={styles.alertModalOverlay}>
+          {/* 바깥 배경 누를 시 모달 닫기 */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={() => setAlertModalVisible(false)}/>
+          {/* 모달 본문 영역 */}
+          <View style={styles.alertModalContents}>
+            <Text style={styles.alertModalTitle}>알림</Text>
+            <Text style={styles.alertModalText}>아직 오지 않은 날입니다.</Text>
+            <View style={styles.alertModalButtonContainer}>
+              {/* 모달 닫기 확인 버튼 */}
+              <TouchableOpacity
+                style={styles.alertModalConfirmButton}
+                activeOpacity={0.8}
+                onPress={() => setAlertModalVisible(false)}>
+                <Text style={styles.alertModalConfirmText}>확인</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
 
     //{/* 업로드/다운로드 모달 */}
@@ -530,34 +588,134 @@ const styles = StyleSheet.create({
 
 
 
+  // ↓↓↓↓↓ 복용 약 목록 카드 영역  ↓↓↓↓↓ 복용 약 목록 카드 영역 ↓↓↓↓↓
+  // ↓↓↓↓↓ 복용 약 목록 카드 영역  ↓↓↓↓↓ 복용 약 목록 카드 영역 ↓↓↓↓↓
+  bottomSection: {
+    flex: 1, 
+    marginTop: 0
+  },
+
+  emptyContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 100,
+  },
+
+  emptyText: {
+    fontSize: 18,
+    color: '#888888',
+    textAlign: 'center',
+    lineHeight: 26,
+  },
+
+  bottomCard: {
+      backgroundColor: 'white', 
+      height: 120,
+      marginBottom: 20,
+      marginHorizontal: 20,
+      borderRadius: 15
+    },
+
+  cardTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 10,
+    color: '#000000',
+  },
+
+  divider: {
+    height: 2,
+    backgroundColor: '#ebe8e8',
+    marginBottom: 12,
+    marginHorizontal: 15
+  },
+
+  cardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+  },
+
+  checkButton: {
+    backgroundColor: '#ebe8e8',
+    width: 65,
+    height: 38,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  timeText: {
+    fontSize: 28,
+    fontWeight: '500',
+    color: '#000000',
+  },
+  // ↑↑↑↑↑ 복용 약 목록 카드 영역  ↑↑↑↑↑ 복용 약 목록 카드 영역 ↑↑↑↑↑
+  // ↑↑↑↑↑ 복용 약 목록 카드 영역  ↑↑↑↑↑ 복용 약 목록 카드 영역 ↑↑↑↑↑
 
 
 
+  // ↓↓↓↓↓ 알림 모달 영역 ↓↓↓↓↓ 알림 모달 영역 ↓↓↓↓↓
+  // ↓↓↓↓↓ 알림 모달 영역 ↓↓↓↓↓ 알림 모달 영역 ↓↓↓↓↓
+  alertModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)', 
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
 
-emptyContainer: {
-  paddingVertical: 40,
-  alignItems: 'center',
-  justifyContent: 'center',
-  marginTop: 100,
-},
-emptyText: {
-  fontSize: 18,
-  color: '#888888',
-  textAlign: 'center',
-  lineHeight: 26,
-},
+  alertModalContents: {
+    width: '80%',
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    paddingTop: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
 
+  alertModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000000',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
 
+  alertModalText: {
+    fontSize: 17,
+    color: '#333333',
+    textAlign: 'center',
+    marginBottom: 28,
+  },
 
+  alertModalButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end', 
+  },
 
+  alertModalConfirmButton: {
+    backgroundColor: '#ebe8e8', 
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 4,
+  },
 
-
-
-
-
-
-
-
+  alertModalConfirmText: {
+    color: 'black',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  // ↑↑↑↑↑ 알림 모달 영역 ↑↑↑↑↑ 알림 모달 영역 ↑↑↑↑↑
+  // ↑↑↑↑↑ 알림 모달 영역 ↑↑↑↑↑ 알림 모달 영역 ↑↑↑↑↑
 
 
 
@@ -591,51 +749,4 @@ emptyText: {
   },
   // ↑↑↑↑↑ 업로드/다운로드 바텀시트 ↑↑↑↑↑ 업로드/다운로드 바텀시트 ↑↑↑↑↑
   // ↑↑↑↑↑ 업로드/다운로드 바텀시트 ↑↑↑↑↑ 업로드/다운로드 바텀시트 ↑↑↑↑↑
-
-  bottomSection: {
-    flex: 1, 
-    marginTop: 0
-  },
-
-  bottomCard: {
-    backgroundColor: 'white', 
-    height: 120,
-    marginBottom: 20,
-    marginHorizontal: 20,
-    borderRadius: 15
-  },
-
-cardTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 10,
-    color: '#000000',
-  },
-  divider: {
-    height: 2,
-    backgroundColor: '#ebe8e8',
-    marginBottom: 12,
-    marginHorizontal: 15
-  },
-  cardContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 10,
-  },
-  checkButton: {
-    backgroundColor: '#ebe8e8',
-    width: 65,
-    height: 38,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  timeText: {
-    fontSize: 28,
-    fontWeight: '500',
-    color: '#000000',
-  },
 });

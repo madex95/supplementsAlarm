@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import React, { useCallback, useRef, useState } from 'react';
 import { FlatList, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import 'react-native-get-random-values';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -36,25 +37,35 @@ export default function pillScreen(){
   const [localTablePill, setLocalTablePill] = useState<DB.PILL[]>([]);
   const [localTablePillDetail, setLocalTablePillDetail] = useState<DB.PILL_DETAIL[]>([]);
   const [localTablePillTakeLog, setLocalTablePillTakeLog] = useState<DB.PILL_TAKE_LOG[]>([]);
+  
+  useFocusEffect(
+    useCallback(() => {
+      const loadStoredData = async () => {
+        try {
+          const storedPill = await AsyncStorage.getItem(DB.PILL_KEY);
+          const storedPillDetail = await AsyncStorage.getItem(DB.PILL_DETAIL_KEY);
+          const storedPillTakeLog = await AsyncStorage.getItem(DB.PILL_TAKE_LOG_KEY);
 
-  // 앱이 켜질 때 저장된 데이터 불러오기
-  useEffect(() => {
-    const loadStoredData = async () => {
-      try {
-        const storedPill = await AsyncStorage.getItem(DB.PILL_KEY);
-        const storedPillDetail = await AsyncStorage.getItem(DB.PILL_DETAIL_KEY);
-        const storedPillTakeLog = await AsyncStorage.getItem(DB.PILL_TAKE_LOG_KEY);
+          const mstData: DB.PILL[] = storedPill ? JSON.parse(storedPill) : [];
+          const dtlData: DB.PILL_DETAIL[] = storedPillDetail ? JSON.parse(storedPillDetail) : [];
+          const logData: DB.PILL_TAKE_LOG[] = storedPillTakeLog ? JSON.parse(storedPillTakeLog) : [];
 
-        if (storedPill) setLocalTablePill(JSON.parse(storedPill));
-        if (storedPillDetail) setLocalTablePillDetail(JSON.parse(storedPillDetail));
-        if (storedPillTakeLog) setLocalTablePillTakeLog(JSON.parse(storedPillTakeLog));
-      } catch (e) {
-        console.error('데이터 불러오기 실패:', e);
-      }
-    };
+          const validMstData = mstData.filter((item) => item.DEL_YN === 'N');
+          const validDtlData = dtlData.filter((item) => item.DEL_YN === 'N');
+          const validLoglData = logData.filter((item) => item.DEL_YN === 'N');
 
-    loadStoredData();
-  }, []);
+          setLocalTablePill(validMstData.sort((a,b) => (b.REG_DT).localeCompare(a.REG_DT)));
+          setLocalTablePillDetail(validDtlData);
+          setLocalTablePillTakeLog(validLoglData);
+
+        } catch (e) {
+          console.error('데이터 불러오기 실패:', e);
+        }
+      };
+
+      loadStoredData();
+    }, []) 
+  );
 
 
   // 등록/수정 구분 state
@@ -67,6 +78,19 @@ export default function pillScreen(){
 
   // 임시로 사용될 state
   const [tempDataState , setTempDataState] = useState<{[key: string]: any;}>();
+
+  // 알림 모달 visible state
+  const [alertModalVisible, setAlertModalVisible] = useState(false);
+
+  // 알림 모달 메시지 State
+  const [alertModalMessage, setAlertModalMessage] = useState('');
+
+
+
+
+
+
+  
 
   // ↓↓↓↓↓ 약 등록 모달 부분 ↓↓↓↓↓ 약 등록 모달 부분 ↓↓↓↓↓
   // ↓↓↓↓↓ 약 등록 모달 부분 ↓↓↓↓↓ 약 등록 모달 부분 ↓↓↓↓↓
@@ -85,7 +109,7 @@ export default function pillScreen(){
     //take Frequency button Click
     console.log("복용 횟수 버튼 클릭");
 
-    setTakeFreq(pillRegTakeFreq);// 복용 횟수 모달에서의 복용 횟수 세팅
+    setTakeFreq(Number(pillRegTakeFreq));// 복용 횟수 모달에서의 복용 횟수 세팅
 
     // 약 복용 횟수 모달 열기
     setPillTakeFreqModalVisible(true);
@@ -128,30 +152,28 @@ export default function pillScreen(){
       // 업데이트 데이터의 uuid
       const updateUuid = tempDataState?.P_UUID;
 
-      // UUID에 맞는 PILL 테이블 데이터 
-      const pillData = localTablePill.find((item) => item.P_UUID === updateUuid);
+      // UUID에 맞는 마스터 데이터 
+      const pillData = localTablePill.find((item) => item.P_UUID === updateUuid && item.DEL_YN === 'N');
       
       // uuid에 해당하는 디테일 데이터
-      const pillDetailData = localTablePillDetail.filter((item) => item.P_UUID === updateUuid);
+      const pillDetailData = localTablePillDetail.filter((item) => item.P_UUID === updateUuid && item.DEL_YN === 'N');
 
       // uuid를 제외하고 남은 디테일 데이터
-      const extPillDetailData = localTablePillDetail.filter((item) => item.P_UUID !== updateUuid);
+      const extPillDetailData = localTablePillDetail.filter((item) => item.P_UUID !== updateUuid && item.DEL_YN === 'N');
 
       // uuid에 해당하는 로그 데이터
       const pillTakeLogData = localTablePillTakeLog.find((item) => item.P_UUID === updateUuid && item.DEL_YN === 'N');
 
-      // pillDetailData 중 use_yn Y 필터링
+
+      // =========================================================================
+      // 🟢 [추가 1] 복용 스케줄(횟수/시간)이 실제로 변경되었는지 확인
+      // =========================================================================
       const useDetails = pillDetailData.filter((item) => item.USE_YN === 'Y');
-
-      // 복용 횟수 체크
       const takeFreqChk = Number(pillData?.P_D_TK_FREQ) !== Number(takeFreq);
-
-      // 복용 시간 체크
       const takeTimeChk = 
         useDetails.length !== pillTakeTimeArray.length ||
         useDetails.some((dtl, idx) => dtl.P_TK_TM !== pillTakeTimeArray[idx]);
 
-      // 복용횟수/복용시간 변경 체크  
       const changeChk = takeFreqChk || takeTimeChk;
 
       if (!changeChk) {
@@ -168,14 +190,14 @@ export default function pillScreen(){
 
         try {
           await AsyncStorage.setItem(DB.PILL_KEY, JSON.stringify(masterUpdateData));
-          setLocalTablePill(masterUpdateData);
+          setLocalTablePill(masterUpdateData.sort((a,b) => (b.REG_DT).localeCompare(a.REG_DT)));
         } catch (e) {
           console.log("실패 " , e);
         }
 
         pillRegCls();
         return; 
-      }
+      } 
 
 
       // 마스터 업데이트 데이터 세팅
@@ -196,10 +218,7 @@ export default function pillScreen(){
 
       console.log('pillTakeLogData ' , pillTakeLogData);
 
-      // 로그 테이블에 uuid에 해당하는 데이터가 없을 때
-      if (!pillTakeLogData){
-
-        // 디테일 업데이트 데이터 세팅
+      // 디테일 업데이트 데이터 세팅
         detailUpdateData = pillDetailData.map((item) => {
 
           // 업데이트 시간
@@ -261,44 +280,75 @@ export default function pillScreen(){
         
         const detailAllData = [...extPillDetailData, ...detailUpdateData];
 
+
+
         try {
           // 마스터-디테일 로컬 저장
           await AsyncStorage.setItem(DB.PILL_DETAIL_KEY, JSON.stringify(detailAllData));
           await AsyncStorage.setItem(DB.PILL_KEY, JSON.stringify(masterUpdateData));
 
           // state 반영
-          setLocalTablePill(masterUpdateData);
+          setLocalTablePill(masterUpdateData.sort((a,b) => (b.REG_DT).localeCompare(a.REG_DT)));
           setLocalTablePillDetail(detailAllData);
         } catch (e){
           console.log("에러 발생 " , e)
         }
 
-
+        const todayYMD = c.getYMD(c.getDate());
         
-        // 등록한 날과 수정하는 날(오늘)이 다를 때
+        // 등록한 날과 수정하는 날(오늘)이 다를 때 (로그 테이블 등록해야됨)
         if (c.getYMD(tempDataState?.REG_DT) !== c.getYMD(c.getDate())){
-          // 로그 -> 수정하는 날(오늘)의 전날까지 등록하면 됨 
-          //let regDate = new Date(pillData!.REG_DT);
+          // 로그 -> 수정하는 날(오늘)의 전날까지 등록
 
-          let modDate = new Date(tempDataState?.MOD_DT);
-          const today = c.getYMD(c.getDate());
+          // 등록 날짜
+          let regDate = new Date(pillData!.REG_DT);
+
+          //let modDate = new Date(tempDataState?.MOD_DT);
 
           const logDateArray = [];
 
-          while(c.getYMD(modDate) < today){
-            logDateArray.push(c.getYMD(modDate));
-            modDate.setDate(modDate.getDate() + 1);
+          // 등록날짜부터 수정날짜까지 순회
+          while(c.getYMD(regDate) < todayYMD){
+
+            const regDateYMD = c.getYMD(regDate);
+
+            // 로그 테이블에 해당 날짜의 데이터 있는지 체크 (있으면 true)
+            const skipChk = localTablePillTakeLog.some(
+              (item) => {
+                return(
+                  item.P_UUID === updateUuid &&
+                  item.DEL_YN === 'N' &&
+                  c.getYMD(item.P_TK_DT) === regDateYMD )
+              }
+            );
+
+            // 해당 날짜의 데이터가 있으면 true
+            if (!skipChk) {
+              const yyyy = regDate.getFullYear();
+              const mm = String(regDate.getMonth() + 1).padStart(2, '0');
+              const dd = String(regDate.getDate()).padStart(2, '0');
+              
+              logDateArray.push(`${yyyy}-${mm}-${dd}`);
+            }
+
+            regDate.setDate(regDate.getDate() + 1);
           }
+
+          const validDetailData = localTablePillDetail.filter(
+            (dtl) => dtl.P_UUID === updateUuid && 
+                     dtl.USE_YN === 'Y' && 
+                     dtl.DEL_YN === 'N'
+          );
 
           let copyLogData = [...localTablePillTakeLog];
 
           logDateArray.forEach((log) => {
-            pillDetailData.forEach((dtl) => {
+            validDetailData.forEach((dtl) => {
               copyLogData.push({
                 P_UUID: dtl.P_UUID,
                 P_TK_TN: dtl.P_TK_TN,
                 P_TK_DT: log,             
-                P_TK_TM: dtl.P_TK_TM,         
+                P_TK_TM: dtl.P_TK_TM,
                 P_TK_CHK_YN: 'N',                
                 USE_YN: 'Y',
                 DEL_YN: 'N',
@@ -309,70 +359,120 @@ export default function pillScreen(){
             })
           })
  
-        setLocalTablePillTakeLog(copyLogData);
-        await AsyncStorage.setItem(DB.PILL_TAKE_LOG_KEY, JSON.stringify(copyLogData));
+          try{
 
-        } 
-      // 로그 테이블에 데이터가 있을 때 
-      } else {
-        // 해당 uuid가 로그 테이블에 있을때
-        if (1==1){
-          // 등록한 날과 수정한 날 같을 때
-          if (1==1){
-            // 마스터 -> 복용횟수 변경시 UPDATE , MOD_DT 등 
-            // 디테일 -> 변경사항, 복용횟수에 따른 USE_YN, MOD_DT 등 UPDATE
-            // 로그 -> TAKE_CHK, 복용 횟수 변경에 따른 USE_YN, MOD_DT UPDATE
-          }
-          // 등록한 날과 수정한 날 다를 때
-          else {
-            // 마스터 -> 복용횟수 변경시 UPDATE , MOD_DT 등 
-            // 디테일 -> 변경사항, 복용횟수에 따른 USE_YN, MOD_DT 등 UPDATE
-            // 로그 -> 현재날짜까지 '아무것도 없는 날' 체크하여 복용횟수만큼 N값 넣기
+            // 로그 sate 세팅
+            setLocalTablePillTakeLog(copyLogData);
+
+            // 로컬 로그 테이블 저장
+            await AsyncStorage.setItem(DB.PILL_TAKE_LOG_KEY, JSON.stringify(copyLogData));
+
+          } catch (e) {
+            console.log(e);
           }
         }
-        // 해당 uuid가 로그 테이블에 없을 때
+        // 같은 날인데 로그 테이블에 값이 존재 할 때 
         else {
-          // 등록한 날과 수정한 날이 같을 때
-          if (1==1){
-            // 마스터 -> 복용횟수 변경시 UPDATE , MOD_DT 등 
-            // 디테일 -> 변경사항, 복용횟수에 따른 USE_YN, MOD_DT 등 UPDATE
-            // 로그 -> 아무것도 안해도됨
+          if (pillTakeLogData){
+
+            console.log('들어왓슴디ㅏ닫다다다다다');
+
+            let copyLogData = [...localTablePillTakeLog];
+            const cnt = new Set<number>();
+
+            console.log('디테일 업데이트 데이트 ');
+            console.log(detailUpdateData);
+
+            copyLogData = copyLogData.map((log) => {
+              if (log.P_UUID === updateUuid && log.DEL_YN === 'N' && c.getYMD(log.P_TK_DT) === todayYMD){
+                
+                const collectTurn = takeFreq >= log.P_TK_TN;
+
+                if (collectTurn){
+                  console.log('맞음!!!!!!!')
+                   const dtlObj = detailUpdateData.find((dtl) => dtl.P_TK_TN === log.P_TK_TN);
+
+                   cnt.add(log.P_TK_TN)
+
+                   return {
+                    ...log,
+                    P_TK_TM : dtlObj!.P_TK_TM,
+                    P_TK_CHK_YN : 'N',
+                    USE_YN : 'Y',
+                    MOD_DT : c.getDate()
+                   };
+                } else {
+                  console.log('다름!!!!!!!')
+                  return {
+                    ...log,
+                    P_TK_CHK_YN: 'N',
+                    USE_YN: 'N',
+                    MOD_DT: c.getDate(),
+                  }
+                }
+
+              }
+              return log;
+            })
+
+            console.log('업데이트 복용횟수 ' , takeFreq);
+            console.log('디테일 업데이트 데이터 ' , detailUpdateData);
+
+            detailUpdateData.forEach((item) => {
+              // 복용횟수 늘어나서 남은 회차들
+              if (takeFreq >= item.P_TK_TN && !cnt.has(item.P_TK_TN)){
+
+                cnt.add(item.P_TK_TN);
+                console.log('남은 회차!! ' , item.P_TK_TN)
+                copyLogData.push({
+                      P_UUID: item.P_UUID,
+                      P_TK_TN: item.P_TK_TN,
+                      P_TK_DT: c.getDate().slice(0, 10),
+                      P_TK_TM: item.P_TK_TM,
+                      P_TK_CHK_YN: 'N',
+                      USE_YN: 'Y',
+                      DEL_YN: 'N',
+                      REG_DT: c.getDate(),
+                      MOD_DT: c.getDate(),
+                      DEL_DT: null,
+                    });
+              }
+            })
+
+
+
+            try{
+
+  console.log('==== [PILL_TAKE_LOG 테이블 데이터 : ' , copyLogData.length , '건] ====');
+    for (let i=0; i<copyLogData.length; i++){
+      console.log(copyLogData[i]);
+    }
+
+              // 로그 sate 세팅
+              setLocalTablePillTakeLog(copyLogData);
+
+              // 로컬 로그 테이블 저장
+              await AsyncStorage.setItem(DB.PILL_TAKE_LOG_KEY, JSON.stringify(copyLogData));
+            } catch (e) {
+              console.log(e);
+            }
           }
-          // 등록한 날과 수정한 날이 다를 때
-          else {
-            // 마스터 -> 복용횟수 변경시 UPDATE , MOD_DT 등 
-            // 디테일 -> 변경사항, 복용횟수에 따른 USE_YN, MOD_DT 등 UPDATE
-            // 로그 -> 현재날짜까지 '아무것도 없는 날' 체크하여 복용횟수만큼 N값 넣기
-          }
-
-        }         
-
-      }
-
-
-      //const pillTakeLogData = await AsyncStorage.getItem(PILL_TAKE_LOG_KEY);
-      // 등록날과 수정날이 같으면
-      // if (getYMD(updateData[0].REG_DT) === getYMD(getDate())){
-      //   // 1. 레코드에 등록된거 다 N으로 바꾼다
-      //   // 2. 복용횟수 변경에 따라서 USE_YN 바꾼다
-      //   try {
-      //     const pill = await AsyncStorage.getItem(PILL_KEY);
-      //     const parsePill = JSON.parse(pill ?? '[]');
-      //     const getUuid = parsePill.find((item : any) => item.P_UUID === updateData[0].P_UUID).P_UUID;
-
-          
-      //   } catch(e) {
-
-      //   }
-      // }
-
-
+        }
       pillRegCls();
     }
     // 약 등록일 경우 (C)
     else if (mode === 'C'){
       console.log("약 등록 실행");
-      const newUuid = uuidv4();
+      let newUuid = uuidv4();
+
+      const storedPill = await AsyncStorage.getItem(DB.PILL_KEY);
+
+      const mstData: DB.PILL[] = storedPill ? JSON.parse(storedPill) : [];
+
+      // uuid 중복 검사
+      while (mstData.some((item) => item.P_UUID === newUuid)){
+        newUuid = uuidv4();
+      }
 
       // PILL 테이블 설정
       const newTablePill: DB.PILL = {
@@ -380,7 +480,8 @@ export default function pillScreen(){
         P_NM: pillRegName,
         P_D_TK_FREQ: pillRegTakeFreq,
         DEL_YN:'N',
-        REG_DT: '2026-09-17',
+        //REG_DT: '2026-09-18',
+        REG_DT : c.getDate(),
         MOD_DT : c.getDate(),
         DEL_DT : null
       };
@@ -391,28 +492,31 @@ export default function pillScreen(){
         return {
           P_UUID: newUuid,
           P_NM: pillRegName,
-          P_TK_TN: index + 1, // 1, 2, 3, 4, 5
+          P_TK_TN: index + 1, 
           P_TK_TM: time,
           USE_YN: 'Y',
           DEL_YN: 'N',
-          REG_DT: '2026-09-17',
+          //REG_DT: '2026-09-18',
+          REG_DT: c.getDate(),
           MOD_DT: c.getDate(),
           DEL_DT : null
         };
       });
 
-      const updatedA = [...localTablePill, newTablePill];
-      const updatedB = [...localTablePillDetail, ...newTablePillDetail];
+      const mstRegData = [...localTablePill, newTablePill];
+      const dtlRegData = [...localTablePillDetail, ...newTablePillDetail];
+
+      mstRegData.sort((a,b) => (b.REG_DT).localeCompare(a.REG_DT));
 
       try {
-        // 로컬 저장소에 저장 (앱을 껐다 켜도 유지)
-        await AsyncStorage.setItem(DB.PILL_KEY, JSON.stringify(updatedA));
-        await AsyncStorage.setItem(DB.PILL_DETAIL_KEY, JSON.stringify(updatedB));
+        // 로컬 저장소에 저장
+        await AsyncStorage.setItem(DB.PILL_KEY, JSON.stringify(mstRegData));
+        await AsyncStorage.setItem(DB.PILL_DETAIL_KEY, JSON.stringify(dtlRegData));
 
-        setLocalTablePill(updatedA);
-        setLocalTablePillDetail(updatedB);
+        setLocalTablePill(mstRegData.sort((a,b) => (b.REG_DT).localeCompare(a.REG_DT)));
+        setLocalTablePillDetail(dtlRegData);
 
-        pillRegCls(); // 모달 닫기 및 입a력값 초기화
+        pillRegCls(); 
 
       } catch (e) {
         console.error('저장 실패:', e);
@@ -489,7 +593,7 @@ export default function pillScreen(){
     // selectedValue가 존재하고 selectedValue가 복용 횟수와 다르면 true
     if (selectedValue && selectedValue !== takeFreq) {
       // 복용 횟수 설정
-      setTakeFreq(selectedValue);
+      setTakeFreq(Number(selectedValue));
     }
 
     // 세트 수 지정
@@ -529,14 +633,15 @@ export default function pillScreen(){
       const lastTime = updatedTimes[updatedTimes.length - 1];
 
       // 마지막 시간의 시 추출
-      const lastHour = parseInt(lastTime.split(':')[0], 10);
+      const lastHour = parseInt(lastTime.slice(0,2), 10);
 
       // 증가된 복용 횟수
       const addedTakeFreq = takeFreq - updatedTimes.length;
 
       // 증가된 복용 횟수 만큼 시 기준으로 +2시간씩 추가
       for (let i = 1; i <= addedTakeFreq; i++) {
-        updatedTimes.push(`${((lastHour + i * 2) % 24).toString().padStart(2, '0')}:00`);
+        const nextHour = (lastHour + i * 2) % 24;
+        updatedTimes.push(`${nextHour.toString().padStart(2, '0')}:00`);
       }
     } 
     // 새로 선택한 복용 횟수(takeFreq)가 시간 배열(updatedTimes) 길이보다 작다면(복용 횟수 감소한 경우)
@@ -667,7 +772,13 @@ export default function pillScreen(){
 
     // 기존 약 복용 시간 배열 복사
     const updatedTimes = [...pillTakeTimeArray];
-    
+
+    // 복용 중복 시간 체크
+    if (updatedTimes.some((item) => item === `${takeHour}:${takeMin}`)){
+      openAlertModal('같은 복용시간이 존재합니다.');
+      return;
+    }
+
     // 현재 선택된 행 시간을 피커에서 선택한 시간으로 설정
     updatedTimes[selectedRowIndex] = `${takeHour}:${takeMin}`;
 
@@ -684,6 +795,40 @@ export default function pillScreen(){
   
   // ↑↑↑↑↑ 복용 회차별 시간 모달 부분 ↑↑↑↑↑ 복용 회차별 시간 모달 부분 ↑↑↑↑↑
   // ↑↑↑↑↑ 복용 회차별 시간 모달 부분 ↑↑↑↑↑ 복용 회차별 시간 모달 부분 ↑↑↑↑↑
+
+
+
+  // ↓↓↓↓↓ 알림 모달 부분 ↓↓↓↓↓ 알림 모달 부분 ↓↓↓↓↓ 알림 모달 부분 ↓↓↓↓↓
+  // ↓↓↓↓↓ 알림 모달 부분 ↓↓↓↓↓ 알림 모달 부분 ↓↓↓↓↓ 알림 모달 부분 ↓↓↓↓↓
+
+
+const alertResolverRef = useRef<((value?: unknown) => void) | null>(null);
+
+// 🟢 openAlertModal: Promise 내부에서 resolve 등록 후 state 변경
+const openAlertModal = (message: string) => {
+  return new Promise((resolve) => {
+    alertResolverRef.current = resolve;
+
+    setAlertModalMessage(message);
+    setAlertModalVisible(true);
+  });
+};
+
+const alertModalHandler = () => {
+  setAlertModalVisible(false);
+
+  if (alertResolverRef.current) {
+    const resolve = alertResolverRef.current;
+    alertResolverRef.current = null; 
+    resolve(true); 
+  }
+};
+
+
+
+
+  // ↑↑↑↑↑ 알림 모달 부분 ↑↑↑↑↑ 알림 모달 부분 ↑↑↑↑↑ 알림 모달 부분 ↑↑↑↑↑
+  // ↑↑↑↑↑ 알림 모달 부분 ↑↑↑↑↑ 알림 모달 부분 ↑↑↑↑↑ 알림 모달 부분 ↑↑↑↑↑
   
 
 
@@ -716,6 +861,8 @@ export default function pillScreen(){
 
   const testUpdateBtnClick = async (item : DB.PILL) => {
 
+    
+
     // 디테일 불러오기
     const tempDetail = localTablePillDetail.filter(
       (tableData) => tableData.P_UUID === item.P_UUID && tableData.USE_YN ==='Y'
@@ -723,23 +870,48 @@ export default function pillScreen(){
 
     // 시간 세팅
     const timeArray = tempDetail.map((data) => data.P_TK_TM);
-    
+
+console.log('모달 뜨기 전 ' , c.getDate().slice(-8));
+await openAlertModal('복용횟수/시간 변경시 \n 오늘 기록된 복용 체크는 \n 모두 취소됩니다.');
     setTempDataState({
-      P_UUID : item.P_UUID,
-      P_D_TK_FREQ : item.P_D_TK_FREQ,
-      P_NM : item.P_NM,
-      P_TK_TM : timeArray,
-      REG_DT : item.REG_DT
+      P_UUID: item.P_UUID,
+      P_D_TK_FREQ: item.P_D_TK_FREQ,
+      P_NM: item.P_NM,
+      P_TK_TM: timeArray,
+      REG_DT: item.REG_DT,
+      MOD_DT: item.MOD_DT,
     });
+
+    setPillRegName(item.P_NM);
+    setPillRegTakeFreq(item.P_D_TK_FREQ);
+    setPillTakeTimeArray(timeArray);
+
+    // 수정 폼 모달 열기
+    setPillRegModalVisible(true);
+// openAlertModal(
+//   '복용횟수/시간 변경시 오늘 기록된 복용 체크는 모두 취소됩니다.',
+//   () => {
+
+//     console.log('드디어 모달 떴다!!!');
     
-    setPillRegName(item.P_NM);  
-    setPillRegTakeFreq(item.P_D_TK_FREQ);  
-    setPillTakeTimeArray(timeArray); 
-    setPillRegModalVisible(true); 
-      
+//     setTempDataState({
+//       P_UUID: item.P_UUID,
+//       P_D_TK_FREQ: item.P_D_TK_FREQ,
+//       P_NM: item.P_NM,
+//       P_TK_TM: timeArray,
+//       REG_DT: item.REG_DT,
+//       MOD_DT: item.MOD_DT,
+//     });
 
+//     setPillRegName(item.P_NM);
+//     setPillRegTakeFreq(item.P_D_TK_FREQ);
+//     setPillTakeTimeArray(timeArray);
 
-      
+//     // 수정 폼 모달 열기
+//     setPillRegModalVisible(true);
+//   }
+// );
+          
 
       // const pillData = await AsyncStorage.getItem(PILL_KEY);
       
@@ -781,7 +953,115 @@ export default function pillScreen(){
   }
 
 
+const addTest = async () => {
+  try {
+    const targetUuid = '44a8faa6-5eda-47e9-b611-544314e00bc9';
 
+    // 1. 기존 AsyncStorage 데이터 가져오기 (없으면 빈 배열)
+    const storedPill = await AsyncStorage.getItem(DB.PILL_KEY);
+    const storedPillDetail = await AsyncStorage.getItem(DB.PILL_DETAIL_KEY);
+    const storedPillTakeLog = await AsyncStorage.getItem(DB.PILL_TAKE_LOG_KEY);
+
+    let currentMstList: DB.PILL[] = storedPill ? JSON.parse(storedPill) : [];
+    let currentDtlList: DB.PILL_DETAIL[] = storedPillDetail ? JSON.parse(storedPillDetail) : [];
+    let currentLogList: DB.PILL_TAKE_LOG[] = storedPillTakeLog ? JSON.parse(storedPillTakeLog) : [];
+
+    // 이미 동일한 UUID의 테스트 데이터가 존재한다면 제거 후 새로 삽입 (중복 방지)
+    currentMstList = currentMstList.filter((item) => item.P_UUID !== targetUuid);
+    currentDtlList = currentDtlList.filter((item) => item.P_UUID !== targetUuid);
+    currentLogList = currentLogList.filter((item) => item.P_UUID !== targetUuid);
+
+    // 2. 마스터 데이터 생성 (1개)
+    const newMstData: DB.PILL = {
+      P_UUID: targetUuid,
+      P_NM: '테스트용',
+      P_D_TK_FREQ: 3,
+      DEL_YN: 'N',
+      REG_DT: '2026-09-21 11:11:11',
+      MOD_DT: '2026-09-21 11:11:11',
+      DEL_DT: null,
+    };
+
+    // 3. 디테일 데이터 생성 (4개: a, b, c, d)
+    const newDtlList: DB.PILL_DETAIL[] = [
+      {
+        P_UUID: targetUuid,
+        P_TK_TN: 1,
+        P_TK_TM: '10:00',
+        USE_YN: 'Y',
+        DEL_YN: 'N',
+        REG_DT: '2026-09-21 11:11:11',
+        MOD_DT: '2026-09-21 11:11:11',
+        DEL_DT: null,
+      },
+      {
+        P_UUID: targetUuid,
+        P_TK_TN: 2,
+        P_TK_TM: '12:00',
+        USE_YN: 'Y',
+        DEL_YN: 'N',
+        REG_DT: '2026-09-21 11:11:11',
+        MOD_DT: '2026-09-21 11:11:11',
+        DEL_DT: null,
+      },
+      {
+        P_UUID: targetUuid,
+        P_TK_TN: 3,
+        P_TK_TM: '14:00',
+        USE_YN: 'Y',
+        DEL_YN: 'N',
+        REG_DT: '2026-09-21 11:11:11',
+        MOD_DT: '2026-09-21 11:11:11',
+        DEL_DT: null,
+      }
+    ];
+
+    // 4. 로그 데이터 생성 (총 8개: 9/17 4개, 9/18 4개)
+    //const logDates = ['2026-09-18', '2026-09-19'];
+    const logDates = ['2026-09-21'];
+    const times = ['10:00', '12:00', '14:00'];
+    //const useYnList = ['Y', 'Y', 'Y',];
+    const takeChkYnList = ['Y', 'N', 'Y',];
+
+    const newLogList: DB.PILL_TAKE_LOG[] = [];
+
+    logDates.forEach((date) => {
+      times.forEach((time, index) => {
+        newLogList.push({
+          P_UUID: targetUuid,
+          P_TK_DT: date,
+          P_TK_TN: index + 1,
+          P_TK_TM: time,
+          P_TK_CHK_YN: takeChkYnList[index],
+          USE_YN: 'Y',
+          DEL_YN: 'N',
+          REG_DT: '2026-09-21 11:11:11',
+          MOD_DT: '2026-09-21 11:11:11',
+          DEL_DT: null,
+        });
+      });
+    });
+
+    // 5. 기존 데이터와 병합
+    const updatedMst = [...currentMstList, newMstData];
+    const updatedDtl = [...currentDtlList, ...newDtlList];
+    const updatedLog = [...currentLogList, ...newLogList];
+
+    // 6. AsyncStorage에 저장
+    await AsyncStorage.setItem(DB.PILL_KEY, JSON.stringify(updatedMst));
+    await AsyncStorage.setItem(DB.PILL_DETAIL_KEY, JSON.stringify(updatedDtl));
+    await AsyncStorage.setItem(DB.PILL_TAKE_LOG_KEY, JSON.stringify(updatedLog));
+
+    // 7. 현재 화면의 React State도 함께 업데이트 (삭제되지 않은 N인 항목만 필터링)
+    setLocalTablePill(updatedMst.filter((item) => item.DEL_YN === 'N').sort((a,b) => (b.REG_DT).localeCompare(a.REG_DT)));
+    setLocalTablePillDetail(updatedDtl.filter((item) => item.DEL_YN === 'N'));
+    setLocalTablePillTakeLog(updatedLog.filter((item) => item.DEL_YN === 'N'));
+
+    console.log('테스트 데이터 등록 성공!');
+  } catch (e) {
+    console.error('테스트 데이터 등록 중 오류 발생:', e);
+  }
+};
     
   return (
 
@@ -804,6 +1084,10 @@ export default function pillScreen(){
             {/* 다운로드 버튼 */}
             <TouchableOpacity style={styles.rightHeaderIconButton} activeOpacity={0.7} onPress={test}>
               <Ionicons name="cloud-download-outline" size={24} color="black" />
+            </TouchableOpacity>
+            {/* 다운로드 버튼 */}
+            <TouchableOpacity style={styles.rightHeaderIconButton} activeOpacity={0.7} onPress={addTest}>
+              <Ionicons name="add-outline" size={24} color="black" />
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -867,11 +1151,13 @@ export default function pillScreen(){
         <Text style={styles.pillAddBtnText}>+</Text>
       </TouchableOpacity>
 
+
       {/*****************************************************************/}  
       {/***** 모달 영역 시작 *********************************************/}  
       {/***** 모달 영역 시작 *********************************************/}  
       {/***** 모달 영역 시작 *********************************************/}
       {/*****************************************************************/}    
+
 
       {/* 약 등록 모달 (풀스크린) */}  
       <Modal
@@ -915,20 +1201,19 @@ export default function pillScreen(){
             {/* 복용 횟수만큼 동적으로 생성되는 표 영역 */}
             <View style={styles.pillTakeTimeTableContainer}>
               {Array.from({ length: pillRegTakeFreq }).map((_, index) => {
-                const pillTakeTime = pillTakeTimeArray[index] || `${((18 + index) % 24).toString().padStart(2, '0')}:00`;
-                return (
-                  <View key={index} style={[styles.pillTakeTimeTableRow, index === pillRegTakeFreq - 1 && { borderBottomWidth: 0 }]}>
-                    <Text style={styles.pillTakeTurnText}>{index + 1}회차 복용</Text>
-                    {/* 복용 시간 버튼 */}
-                    <TouchableOpacity 
-                      style={styles.pillTakeTimeBtn} 
-                      activeOpacity={0.7} 
-                      onPress={() => takeTurnTmClk(index)}>
-                      {/* 복용 시간 출력 */}
-                      <Text style={styles.pillTakeTimeBtnText}>{pillTakeTime}</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
+                  const displayTime = pillTakeTimeArray[index] || `${((18 + index) % 24).toString().padStart(2, '0')}:00`;
+
+                  return (
+                    <View key={index} style={[styles.pillTakeTimeTableRow, index === pillRegTakeFreq - 1 && { borderBottomWidth: 0 }]}>
+                      <Text style={styles.pillTakeTurnText}>{index + 1}회차 복용</Text>
+                      <TouchableOpacity 
+                        style={styles.pillTakeTimeBtn} 
+                        activeOpacity={0.7} 
+                        onPress={() => takeTurnTmClk(index)}>
+                        <Text style={styles.pillTakeTimeBtnText}>{displayTime}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
               })}
             </View>
           </ScrollView>
@@ -1164,6 +1449,38 @@ export default function pillScreen(){
           </Modal>
         </SafeAreaView>
       </Modal>
+      {/* 알림 모달 영역 */}
+<Modal
+  transparent={true}
+  visible={alertModalVisible}
+  animationType="fade"
+  onRequestClose={alertModalHandler}>
+  <View style={styles.alertModalOverlay}>
+    {/* 바깥 배경 누를 시 모달 닫기 */}
+    <TouchableOpacity
+      style={StyleSheet.absoluteFillObject}
+      activeOpacity={1}
+      onPress={alertModalHandler} />
+
+    {/* 모달 본문 영역 */}
+    <View style={styles.alertModalContents}>
+      <Text style={styles.alertModalTitle}>알림</Text>
+      
+      {/* 🚨 기존 "아직 오지 않은 날입니다." 하드코딩 제거 ➔ state 변수로 연결 */}
+      <Text style={styles.alertModalText}>{alertModalMessage}</Text>
+      
+      <View style={styles.alertModalButtonContainer}>
+        {/* 모달 닫기 확인 버튼 */}
+        <TouchableOpacity
+          style={styles.alertModalConfirmButton}
+          activeOpacity={0.8}
+          onPress={alertModalHandler}>
+          <Text style={styles.alertModalConfirmText}>확인</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  </View>
+</Modal>
     </View>
 
     );
@@ -1411,6 +1728,60 @@ const styles = StyleSheet.create({
 
   pillRegConfirmBtnDisable: {
     backgroundColor: '#CCCCCC', 
+  },
+
+  alertModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)', 
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  alertModalContents: {
+    width: '80%',
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    paddingTop: 24,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+
+  alertModalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000000',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+
+  alertModalText: {
+    fontSize: 17,
+    color: '#333333',
+    textAlign: 'center',
+    marginBottom: 28,
+  },
+
+  alertModalButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end', 
+  },
+
+  alertModalConfirmButton: {
+    backgroundColor: '#ebe8e8', 
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 4,
+  },
+
+  alertModalConfirmText: {
+    color: 'black',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   // ↑↑↑↑↑ 약 등록 모달 영역 ↑↑↑↑↑ 약 등록 모달 영역 ↑↑↑↑↑
   // ↑↑↑↑↑ 약 등록 모달 영역 ↑↑↑↑↑ 약 등록 모달 영역 ↑↑↑↑↑
