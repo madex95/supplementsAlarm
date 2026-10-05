@@ -82,15 +82,78 @@ export default function pillScreen(){
   // 알림 모달 visible state
   const [alertModalVisible, setAlertModalVisible] = useState(false);
 
+  // 알림 모달 mode
+  const [alertModalMode, setAlertModalMode] = useState('');
+
   // 알림 모달 메시지 State
   const [alertModalMessage, setAlertModalMessage] = useState('');
 
 
 
 
+  // ↓↓↓↓↓ 약 목록 카드 부분 ↓↓↓↓↓ 약 목록 카드 부분 ↓↓↓↓↓
+  // ↓↓↓↓↓ 약 목록 카드 부분 ↓↓↓↓↓ 약 목록 카드 부분 ↓↓↓↓↓
 
+  // 수정 버튼 클릭 시 실행 함수
+  const updateBtnClick = async (item : DB.PILL) => { 
+    // update Botton Click 
+
+    // 디테일 불러오기
+    const tempDetail = localTablePillDetail.filter(
+      (tableData) => tableData.P_UUID === item.P_UUID && tableData.USE_YN ==='Y'
+    ) 
+
+    // 시간 세팅
+    const timeArray = tempDetail.map((data) => data.P_TK_TM);
+
+    // 알람 모달 모드 세팅 (A : alert , C : confirm)
+    setAlertModalMode('A');
+
+    // 알림 모달창 띄우기
+    await openAlertModal('복용횟수/시간 변경시 \n 오늘 기록된 복용 체크는 \n 모두 취소됩니다.');
+
+    // 임시 데이터 세팅
+    setTempDataState({
+      P_UUID: item.P_UUID,
+      P_D_TK_FREQ: item.P_D_TK_FREQ,
+      P_NM: item.P_NM,
+      P_TK_TM: timeArray,
+      REG_DT: item.REG_DT,
+      MOD_DT: item.MOD_DT,
+    });
+
+    setPillRegName(item.P_NM);
+    setPillRegTakeFreq(item.P_D_TK_FREQ);
+    setPillTakeTimeArray(timeArray);
+    setPillRegModalVisible(true);
+  }
+
+  const deleteBtnClick = async (item : DB.PILL) => {
+
+    const uuid = item.P_UUID;
+
+    setAlertModalMode('C');
+
+    const chkYN = await openAlertModal('삭제 시 해당 약에 대한 \n모든 기록이 사라집니다.');
+
+    if (!chkYN){
+      console.log('취소');
+      
+      return;
+    } 
+
+    console.log('삭제 시작');
+  }
+
+  // ↑↑↑↑↑ 약 목록 카드 부분 ↑↑↑↑↑ 약 목록 카드 부분 ↑↑↑↑↑
+  // ↑↑↑↑↑ 약 목록 카드 부분 ↑↑↑↑↑ 약 목록 카드 부분 ↑↑↑↑↑
 
   
+
+
+
+
+
 
   // ↓↓↓↓↓ 약 등록 모달 부분 ↓↓↓↓↓ 약 등록 모달 부분 ↓↓↓↓↓
   // ↓↓↓↓↓ 약 등록 모달 부분 ↓↓↓↓↓ 약 등록 모달 부분 ↓↓↓↓↓
@@ -164,10 +227,7 @@ export default function pillScreen(){
       // uuid에 해당하는 로그 데이터
       const pillTakeLogData = localTablePillTakeLog.find((item) => item.P_UUID === updateUuid && item.DEL_YN === 'N');
 
-
-      // =========================================================================
-      // 🟢 [추가 1] 복용 스케줄(횟수/시간)이 실제로 변경되었는지 확인
-      // =========================================================================
+      // 수정사항 확인 로직
       const useDetails = pillDetailData.filter((item) => item.USE_YN === 'Y');
       const takeFreqChk = Number(pillData?.P_D_TK_FREQ) !== Number(takeFreq);
       const takeTimeChk = 
@@ -176,6 +236,7 @@ export default function pillScreen(){
 
       const changeChk = takeFreqChk || takeTimeChk;
 
+      // 이름만 변경 된 경우
       if (!changeChk) {
         const masterUpdateData = localTablePill.map((item) => {
           if (item.P_UUID === updateUuid) {
@@ -375,13 +436,8 @@ export default function pillScreen(){
         else {
           if (pillTakeLogData){
 
-            console.log('들어왓슴디ㅏ닫다다다다다');
-
             let copyLogData = [...localTablePillTakeLog];
             const cnt = new Set<number>();
-
-            console.log('디테일 업데이트 데이트 ');
-            console.log(detailUpdateData);
 
             copyLogData = copyLogData.map((log) => {
               if (log.P_UUID === updateUuid && log.DEL_YN === 'N' && c.getYMD(log.P_TK_DT) === todayYMD){
@@ -415,9 +471,6 @@ export default function pillScreen(){
               return log;
             })
 
-            console.log('업데이트 복용횟수 ' , takeFreq);
-            console.log('디테일 업데이트 데이터 ' , detailUpdateData);
-
             detailUpdateData.forEach((item) => {
               // 복용횟수 늘어나서 남은 회차들
               if (takeFreq >= item.P_TK_TN && !cnt.has(item.P_TK_TN)){
@@ -439,14 +492,7 @@ export default function pillScreen(){
               }
             })
 
-
-
             try{
-
-  console.log('==== [PILL_TAKE_LOG 테이블 데이터 : ' , copyLogData.length , '건] ====');
-    for (let i=0; i<copyLogData.length; i++){
-      console.log(copyLogData[i]);
-    }
 
               // 로그 sate 세팅
               setLocalTablePillTakeLog(copyLogData);
@@ -804,7 +850,6 @@ export default function pillScreen(){
 
 const alertResolverRef = useRef<((value?: unknown) => void) | null>(null);
 
-// 🟢 openAlertModal: Promise 내부에서 resolve 등록 후 state 변경
 const openAlertModal = (message: string) => {
   return new Promise((resolve) => {
     alertResolverRef.current = resolve;
@@ -814,7 +859,7 @@ const openAlertModal = (message: string) => {
   });
 };
 
-const alertModalHandler = () => {
+const alertModalConfirmHandler = () => {
   setAlertModalVisible(false);
 
   if (alertResolverRef.current) {
@@ -823,6 +868,16 @@ const alertModalHandler = () => {
     resolve(true); 
   }
 };
+
+const alertModalCloseHandler = () => {
+  setAlertModalVisible(false);
+
+  if (alertResolverRef.current) {
+    const resolve = alertResolverRef.current;
+    alertResolverRef.current = null;
+    resolve(false); 
+  }
+}
 
 
 
@@ -857,73 +912,7 @@ const alertModalHandler = () => {
       }
   }
 
-  //const [updateData , setUpdateData] = useState<PILL_DETAIL[]>([]);
-
-  const testUpdateBtnClick = async (item : DB.PILL) => {
-
-    
-
-    // 디테일 불러오기
-    const tempDetail = localTablePillDetail.filter(
-      (tableData) => tableData.P_UUID === item.P_UUID && tableData.USE_YN ==='Y'
-    ) 
-
-    // 시간 세팅
-    const timeArray = tempDetail.map((data) => data.P_TK_TM);
-
-console.log('모달 뜨기 전 ' , c.getDate().slice(-8));
-await openAlertModal('복용횟수/시간 변경시 \n 오늘 기록된 복용 체크는 \n 모두 취소됩니다.');
-    setTempDataState({
-      P_UUID: item.P_UUID,
-      P_D_TK_FREQ: item.P_D_TK_FREQ,
-      P_NM: item.P_NM,
-      P_TK_TM: timeArray,
-      REG_DT: item.REG_DT,
-      MOD_DT: item.MOD_DT,
-    });
-
-    setPillRegName(item.P_NM);
-    setPillRegTakeFreq(item.P_D_TK_FREQ);
-    setPillTakeTimeArray(timeArray);
-
-    // 수정 폼 모달 열기
-    setPillRegModalVisible(true);
-// openAlertModal(
-//   '복용횟수/시간 변경시 오늘 기록된 복용 체크는 모두 취소됩니다.',
-//   () => {
-
-//     console.log('드디어 모달 떴다!!!');
-    
-//     setTempDataState({
-//       P_UUID: item.P_UUID,
-//       P_D_TK_FREQ: item.P_D_TK_FREQ,
-//       P_NM: item.P_NM,
-//       P_TK_TM: timeArray,
-//       REG_DT: item.REG_DT,
-//       MOD_DT: item.MOD_DT,
-//     });
-
-//     setPillRegName(item.P_NM);
-//     setPillRegTakeFreq(item.P_D_TK_FREQ);
-//     setPillTakeTimeArray(timeArray);
-
-//     // 수정 폼 모달 열기
-//     setPillRegModalVisible(true);
-//   }
-// );
-          
-
-      // const pillData = await AsyncStorage.getItem(PILL_KEY);
-      
-      // if (pillData) {
-      //   const pillTable : PILL[] = JSON.parse(pillData);
-      //   for(let i=0; i<pillTable.length; i++){
-      //     console.log(pillTable[i].P_UUID);
-      //   }
-      // }
-
-  }
-
+  
   const test = async () => {
 
     const mst = await AsyncStorage.getItem(DB.PILL_KEY);
@@ -1018,7 +1007,7 @@ const addTest = async () => {
 
     // 4. 로그 데이터 생성 (총 8개: 9/17 4개, 9/18 4개)
     //const logDates = ['2026-09-18', '2026-09-19'];
-    const logDates = ['2026-09-21'];
+    const logDates = ['2026-09-23'];
     const times = ['10:00', '12:00', '14:00'];
     //const useYnList = ['Y', 'Y', 'Y',];
     const takeChkYnList = ['Y', 'N', 'Y',];
@@ -1125,13 +1114,15 @@ const addTest = async () => {
                   {/* 수정 버튼 */}
                   <TouchableOpacity 
                     style={styles.pillListBtn} 
-                    activeOpacity={0.7}>
-                    <View><Text style={styles.pillListBtnText} onPress={() => {testUpdateBtnClick(item); setMode('U');}}>수정</Text></View>  
+                    activeOpacity={0.7}
+                    onPress={() => {updateBtnClick(item); setMode('U');}}>
+                    <View><Text style={styles.pillListBtnText}>수정</Text></View>  
                   </TouchableOpacity>
                   {/* 삭제 버튼 */}
                   <TouchableOpacity 
                     style={styles.pillListBtn} 
-                    activeOpacity={0.7}>
+                    activeOpacity={0.7}
+                    onPress={() => {deleteBtnClick(item);}}>
                     <View><Text style={styles.pillListBtnText}>삭제</Text></View>    
                   </TouchableOpacity>
                 </View>
@@ -1450,37 +1441,52 @@ const addTest = async () => {
         </SafeAreaView>
       </Modal>
       {/* 알림 모달 영역 */}
-<Modal
-  transparent={true}
-  visible={alertModalVisible}
-  animationType="fade"
-  onRequestClose={alertModalHandler}>
-  <View style={styles.alertModalOverlay}>
-    {/* 바깥 배경 누를 시 모달 닫기 */}
-    <TouchableOpacity
-      style={StyleSheet.absoluteFillObject}
-      activeOpacity={1}
-      onPress={alertModalHandler} />
-
-    {/* 모달 본문 영역 */}
-    <View style={styles.alertModalContents}>
-      <Text style={styles.alertModalTitle}>알림</Text>
-      
-      {/* 🚨 기존 "아직 오지 않은 날입니다." 하드코딩 제거 ➔ state 변수로 연결 */}
-      <Text style={styles.alertModalText}>{alertModalMessage}</Text>
-      
-      <View style={styles.alertModalButtonContainer}>
-        {/* 모달 닫기 확인 버튼 */}
-        <TouchableOpacity
-          style={styles.alertModalConfirmButton}
-          activeOpacity={0.8}
-          onPress={alertModalHandler}>
-          <Text style={styles.alertModalConfirmText}>확인</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  </View>
-</Modal>
+      <Modal
+        transparent={true}
+        visible={alertModalVisible}
+        animationType="fade"
+        onRequestClose={alertModalCloseHandler}>
+        <View style={styles.alertModalOverlay}>
+          {/* 바깥 배경 누를 시 모달 닫기 */}
+          <TouchableOpacity
+            style={StyleSheet.absoluteFillObject}
+            activeOpacity={1}
+            onPress={alertModalCloseHandler} />
+          {/* 모달 본문 영역 */}
+          <View style={styles.alertModalContents}>
+            <Text style={styles.alertModalTitle}>알림</Text>
+            {/* 메세지 부분 */}
+            <Text style={styles.alertModalText}>{alertModalMessage}</Text>
+              {alertModalMode === 'A' ? (
+                // 확인 버튼
+                <View style={styles.alertModalButtonContainer}>
+                  <TouchableOpacity
+                    style={styles.alertModalConfirmButton}
+                    activeOpacity={0.8}
+                    onPress={alertModalConfirmHandler}>
+                    <Text style={styles.alertModalConfirmText}>확인</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.alertModalButtonContainer}>
+                  <TouchableOpacity
+                    style={styles.alertModalConfirmButton}
+                    activeOpacity={0.8}
+                    onPress={alertModalConfirmHandler}>
+                    <Text style={styles.alertModalConfirmText}>확인</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.alertModalConfirmButton}
+                    activeOpacity={0.8}
+                    onPress={alertModalCloseHandler}>
+                    <Text style={styles.alertModalConfirmText}>취소</Text>
+                  </TouchableOpacity>
+                </View>
+                
+              )}
+          </View>
+        </View>
+      </Modal>
     </View>
 
     );
@@ -1768,7 +1774,7 @@ const styles = StyleSheet.create({
 
   alertModalButtonContainer: {
     flexDirection: 'row',
-    justifyContent: 'flex-end', 
+    justifyContent: 'center', 
   },
 
   alertModalConfirmButton: {

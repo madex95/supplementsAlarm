@@ -140,7 +140,7 @@ export default function weekScreen() {
     const currentDay = todayObj.getDay();
 
     // 원하는 형식으로 날짜 세팅 
-    const days = ['금', '토', '일', '월', '화', '수', '목'];
+    const days = ['월', '화', '수', '목', '금', '토', '일'];
 
     // 요일 숫자값으로 매핑
     const dayMap: { [key: string]: number } = {
@@ -365,9 +365,11 @@ const googleClick = async() => {
           </View>
           {/* 오른쪽 영역 */}
           <View style={styles.rightHeader}>
+            {/* 업로드 버튼 */}
             <TouchableOpacity style={styles.rightHeaderIconButton} activeOpacity={0.7}>
               <Ionicons name="cloud-upload-outline" size={24} color="black" />
             </TouchableOpacity>
+            {/* 다운로드 버튼 */}
             <TouchableOpacity style={styles.rightHeaderIconButton} activeOpacity={0.7}>
               <Ionicons name="cloud-download-outline" size={24} color="black" />
             </TouchableOpacity>
@@ -699,7 +701,7 @@ const styles = StyleSheet.create({
 
   alertModalButtonContainer: {
     flexDirection: 'row',
-    justifyContent: 'flex-end', 
+    justifyContent: 'center', 
   },
 
   alertModalConfirmButton: {
